@@ -1,0 +1,6 @@
+go build -v ./cmd/apiserver
+go run ./cmd/apiserver
+
+go test -v -race -timeout 30s ./...
+
+sudo service postgresql start запуск бд
