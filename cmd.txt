@@ -1,6 +1,10 @@
+cd /mnt/c/Users/maxim/Desktop/Projects/http-rest-api
+
 go build -v ./cmd/apiserver
 go run ./cmd/apiserver
 
 go test -v -race -timeout 30s ./...
 
 sudo service postgresql start запуск бд
+
+http POST http://localhost:8080/sessions email=user@example.org password=123

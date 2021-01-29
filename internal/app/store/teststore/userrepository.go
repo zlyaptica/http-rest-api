@@ -7,7 +7,7 @@ import (
 
 // UserRepository ...
 type UserRepository struct {
-	store *store.Store
+	store *Store
 	users map[string]*model.User
 }
 

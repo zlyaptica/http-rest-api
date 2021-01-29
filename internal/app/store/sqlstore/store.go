@@ -3,7 +3,6 @@ package sqlstore
 import (
 	"database/sql"
 
-	_ "github.com/lib/pq" // ...
 	"github.com/zlyaptica/http-rest-api/internal/app/store"
 )
 
@@ -25,8 +24,10 @@ func (s *Store) User() store.UserRepository {
 	if s.userRepository != nil {
 		return s.userRepository
 	}
+
 	s.userRepository = &UserRepository{
 		store: s,
 	}
+
 	return s.userRepository
 }
