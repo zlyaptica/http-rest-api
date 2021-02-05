@@ -3,3 +3,4 @@ CREATE TABLE users (
     email varchar not null unique, 
     encrypted_password varchar not null 
 );
+

@@ -7,4 +7,6 @@ go test -v -race -timeout 30s ./...
 
 sudo service postgresql start запуск бд
 
-http POST http://localhost:8080/sessions email=user@example.org password=123
+http -v --session=user POST http://localhost:8080/sessions email=user@example.org password=password
+
+http -v --session=user http://localhost:8080/private/whoami "Origin: google.com"
