@@ -8,3 +8,11 @@ type UserRepository interface {
 	Find(int) (*model.User, error)
 	FindByEmail(string) (*model.User, error)
 }
+
+// PostRepository ...
+type PostRepository interface {
+	Create(*model.Post) error
+	Find(int) (*model.Post, error)
+	FindAll() ([]model.Post, error)
+	FindN(int, int) ([]model.Post, error)
+}

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
 	"github.com/sirupsen/logrus"
@@ -56,13 +55,33 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *server) configureRouter() {
 	s.router.Use(s.setRequestID)
 	s.router.Use(s.logRequest)
-	s.router.Use(handlers.CORS(handlers.AllowedOrigins([]string{"*"})))
-	s.router.HandleFunc("/users", s.handleUsersCreate()).Methods("POST")
-	s.router.HandleFunc("/sessions", s.handleSessionsCreate()).Methods("POST")
+	s.router.Use(s.setCORS)
+	s.router.HandleFunc("/users", s.handleUsersCreate()).Methods("POST", "OPTIONS")
+	s.router.HandleFunc("/sessions", s.handleSessionsCreate()).Methods("POST", "OPTIONS")
+
+	s.router.HandleFunc("/posts", s.handlePostsGet()).Methods("GET")
 
 	private := s.router.PathPrefix("/private").Subrouter()
 	private.Use(s.authenticateUser)
+
+	private.HandleFunc("/posts", s.handlePostsCreate()).Methods("POST", "OPTIONS")
 	private.HandleFunc("/whoami", s.handleWhoami())
+}
+
+func (s *server) setCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "*")
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *server) setRequestID(next http.Handler) http.Handler {
@@ -190,6 +209,54 @@ func (s *server) handleSessionsCreate() http.HandlerFunc {
 		}
 
 		s.respond(w, r, http.StatusOK, nil)
+	}
+}
+
+func (s *server) handlePostsCreate() http.HandlerFunc {
+	type request struct {
+		Header   string `json:"header"`
+		TextPost string `json:"text_post"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		req := &request{}
+		author := r.Context().Value(ctxKeyUser).(*model.User)
+
+		if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+			s.error(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		p := &model.Post{
+			Header:   req.Header,
+			TextPost: req.TextPost,
+			AuthorID: author.ID,
+		}
+		if err := s.store.Post().Create(p); err != nil {
+			s.error(w, r, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(w, r, http.StatusCreated, p)
+	}
+}
+
+func (s *server) handlePostsGet() http.HandlerFunc {
+	type response struct {
+		Items []model.Post `json:"items"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		posts, err := s.store.Post().FindAll()
+		if err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		resp := &response{
+			Items: posts,
+		}
+
+		s.respond(w, r, http.StatusOK, resp)
 	}
 }
 
