@@ -66,6 +66,7 @@ func (s *server) configureRouter() {
 
 	private.HandleFunc("/posts", s.handlePostsCreate()).Methods("POST", "OPTIONS")
 	private.HandleFunc("/whoami", s.handleWhoami())
+	// private.HandleFunc("/posts/star", s.handleStarGive()).Methods("POST", "OPTIONS")
 }
 
 func (s *server) setCORS(next http.Handler) http.Handler {
@@ -178,9 +179,10 @@ func (s *server) handleUsersCreate() http.HandlerFunc {
 
 func (s *server) handleSessionsCreate() http.HandlerFunc {
 	type request struct {
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Username   string `json:"username"`
+		Email      string `json:"email"`
+		Password   string `json:"password"`
+		RememberMe bool   `json:"rememberMe"`
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -202,6 +204,9 @@ func (s *server) handleSessionsCreate() http.HandlerFunc {
 			return
 		}
 
+		if !req.RememberMe {
+			session.Options.MaxAge = 0
+		}
 		session.Values["user_id"] = u.ID
 		if err := s.sessionStore.Save(r, w, session); err != nil {
 			s.error(w, r, http.StatusInternalServerError, err)
@@ -230,7 +235,7 @@ func (s *server) handlePostsCreate() http.HandlerFunc {
 		p := &model.Post{
 			Header:   req.Header,
 			TextPost: req.TextPost,
-			AuthorID: author.ID,
+			Author:   author,
 		}
 		if err := s.store.Post().Create(p); err != nil {
 			s.error(w, r, http.StatusUnprocessableEntity, err)
@@ -240,6 +245,31 @@ func (s *server) handlePostsCreate() http.HandlerFunc {
 		s.respond(w, r, http.StatusCreated, p)
 	}
 }
+
+// func (s *server) handleStarGive() http.HandlerFunc {
+// 	type request struct {
+// 		PostID int `json:"post_id"`
+// 	}
+
+// 	return func(w http.ResponseWriter, r *http.Request) {
+// 		req := &request{}
+// 		starer := r.Context().Value(ctxKeyUser).(*model.User)
+
+// 		if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+// 			s.error(w, r, http.StatusUnprocessableEntity, err)
+// 			return
+// 		}
+
+// 		// s := &model.Star{
+// 		// 	Starer: starer,
+// 		// 	Post: &model.Post{
+// 		// 		id
+// 		// 	},
+// 		// }
+
+// 		s.respond(w, r, http.StatusCreated, s)
+// 	}
+// }
 
 func (s *server) handlePostsGet() http.HandlerFunc {
 	type response struct {

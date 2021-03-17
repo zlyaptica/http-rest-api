@@ -9,7 +9,7 @@ import (
 // Post ...
 type Post struct {
 	ID        int       `json:"id"`
-	AuthorID  int       `json:"author_id"`
+	Author    *User     `json:"author"`
 	Header    string    `json:"header"`
 	TextPost  string    `json:"text_post"`
 	CreatedAt time.Time `json:"created_at"`

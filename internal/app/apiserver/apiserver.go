@@ -1,10 +1,10 @@
 package apiserver
 
 import (
-	"database/sql"
 	"net/http"
 
 	"github.com/gorilla/sessions"
+	"github.com/jmoiron/sqlx"
 	"github.com/zlyaptica/http-rest-api/internal/app/store/sqlstore"
 )
 
@@ -23,13 +23,9 @@ func Start(config *Config) error {
 	return http.ListenAndServe(config.BindAddr, srv)
 }
 
-func newDB(dbURL string) (*sql.DB, error) {
-	db, err := sql.Open("postgres", dbURL)
+func newDB(dbURL string) (*sqlx.DB, error) {
+	db, err := sqlx.Connect("postgres", dbURL)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := db.Ping(); err != nil {
 		return nil, err
 	}
 

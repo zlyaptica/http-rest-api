@@ -16,3 +16,7 @@ type PostRepository interface {
 	FindAll() ([]model.Post, error)
 	FindN(int, int) ([]model.Post, error)
 }
+
+type StarRepository interface {
+	Create(*model.Star) error
+}

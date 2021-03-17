@@ -12,3 +12,6 @@ http -v --session=user POST http://localhost:8080/sessions email=user@example.or
 http -v --session=user http://localhost:8080/private/whoami "Origin: google.com"
 
 http://localhost:8080/posts
+
+./migrate create -ext sql -dir migrations create_star
+./migrate -path migrations -database "postgres://localhost:5432/restapi_dev?sslmode=disable&password=0000" up

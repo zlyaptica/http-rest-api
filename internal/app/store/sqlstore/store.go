@@ -1,20 +1,19 @@
 package sqlstore
 
 import (
-	"database/sql"
-
+	"github.com/jmoiron/sqlx"
 	"github.com/zlyaptica/http-rest-api/internal/app/store"
 )
 
 // Store ...
 type Store struct {
-	db             *sql.DB
+	db             *sqlx.DB
 	userRepository *UserRepository
 	postRepository *PostRepository
 }
 
 // New ...
-func New(db *sql.DB) *Store {
+func New(db *sqlx.DB) *Store {
 	return &Store{
 		db: db,
 	}

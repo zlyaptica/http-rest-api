@@ -21,7 +21,7 @@ func (r *PostRepository) Create(p *model.Post) error {
 
 	return r.store.db.QueryRow(
 		"INSERT INTO posts (author_id, header, text_post, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
-		p.AuthorID,
+		p.Author.ID,
 		p.Header,
 		p.TextPost,
 		time.Now(),
@@ -30,13 +30,17 @@ func (r *PostRepository) Create(p *model.Post) error {
 
 // Find ...
 func (r *PostRepository) Find(id int) (*model.Post, error) {
-	p := &model.Post{}
+	u := &model.User{}
+	p := &model.Post{
+		Author: u,
+	}
 	if err := r.store.db.QueryRow(
-		"SELECT id, author_id, header, text_post, created_at FROM posts WHERE id = $1",
+		"SELECT users.username, users.id, posts.id, posts.header, posts.text_post, posts.created_at FROM posts INNER JOIN users ON posts.author_id = users.id",
 		id,
 	).Scan(
+		p.Author.Username,
+		p.Author.ID,
 		p.ID,
-		p.AuthorID,
 		p.Header,
 		p.TextPost,
 		p.CreatedAt,
@@ -54,7 +58,7 @@ func (r *PostRepository) Find(id int) (*model.Post, error) {
 // FindAll ...
 func (r *PostRepository) FindAll() ([]model.Post, error) {
 	posts := []model.Post{}
-	rows, err := r.store.db.Query("SELECT id, author_id, header, text_post, created_at FROM posts")
+	rows, err := r.store.db.Query("SELECT users.username, users.id, posts.id, posts.header, posts.text_post, posts.created_at FROM posts INNER JOIN users ON posts.author_id = users.id")
 	defer rows.Close()
 
 	if err != nil {
@@ -65,8 +69,18 @@ func (r *PostRepository) FindAll() ([]model.Post, error) {
 	}
 
 	for rows.Next() {
-		p := model.Post{}
-		err := rows.Scan(&p.ID, &p.AuthorID, &p.Header, &p.TextPost, &p.CreatedAt)
+		u := &model.User{}
+		p := model.Post{
+			Author: u,
+		}
+		err := rows.Scan(
+			&p.Author.Username,
+			&p.Author.ID,
+			&p.ID,
+			&p.Header,
+			&p.TextPost,
+			&p.CreatedAt,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -84,7 +98,7 @@ func (r *PostRepository) FindN(id int, n int) ([]model.Post, error) {
 		id,
 	).Scan(
 		p.ID,
-		p.AuthorID,
+		p.Author,
 		p.Header,
 		p.TextPost,
 		p.CreatedAt,
