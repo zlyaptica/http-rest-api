@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,6 +25,7 @@ const (
 var (
 	errIncorrectEmailOrPassword = errors.New("incorrect email or password")
 	errNotAuthenticated         = errors.New("not authenticated")
+	errNoPermission             = errors.New("no permission")
 )
 
 type ctxKey int8
@@ -56,23 +58,31 @@ func (s *server) configureRouter() {
 	s.router.Use(s.setRequestID)
 	s.router.Use(s.logRequest)
 	s.router.Use(s.setCORS)
+	s.router.Use(s.authenticateUser)
 	s.router.HandleFunc("/users", s.handleUsersCreate()).Methods("POST", "OPTIONS")
 	s.router.HandleFunc("/sessions", s.handleSessionsCreate()).Methods("POST", "OPTIONS")
 
 	s.router.HandleFunc("/posts", s.handlePostsGet()).Methods("GET")
+	s.router.HandleFunc("/user/{id}", s.handleGetUserByID()).Methods("GET")
+	s.router.HandleFunc("/user/{id}/posts", s.handlePostsGetByUserID()).Methods("GET")
 
 	private := s.router.PathPrefix("/private").Subrouter()
-	private.Use(s.authenticateUser)
+	private.Use(s.authorizeUser)
 
-	private.HandleFunc("/posts", s.handlePostsCreate()).Methods("POST", "OPTIONS")
 	private.HandleFunc("/whoami", s.handleWhoami())
-	// private.HandleFunc("/posts/star", s.handleStarGive()).Methods("POST", "OPTIONS")
+	private.HandleFunc("/posts", s.handlePostsCreate()).Methods("POST", "OPTIONS")
+	private.HandleFunc("/posts/{id}", s.handlePostGet()).Methods("GET", "OPTIONS")
+	private.HandleFunc("/posts/{id}", s.handlePostDelete()).Methods("DELETE", "OPTIONS")
+	private.HandleFunc("/posts/{id}", s.handlePostUpdate()).Methods("PUT", "OPTIONS")
+
+	private.HandleFunc("/posts/{id}/star", s.handleStarGive()).Methods("POST", "OPTIONS")
+	private.HandleFunc("/posts/{id}/star", s.handleStarTake()).Methods("DELETE", "OPTIONS")
 }
 
 func (s *server) setCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -134,12 +144,24 @@ func (s *server) authenticateUser(next http.Handler) http.Handler {
 
 		id, ok := session.Values["user_id"]
 		if !ok {
-			s.error(w, r, http.StatusUnauthorized, errNotAuthenticated)
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKeyUser, nil)))
 			return
 		}
 
 		u, err := s.store.User().Find(id.(int))
 		if err != nil {
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKeyUser, nil)))
+			return
+		}
+
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKeyUser, u)))
+	})
+}
+
+func (s *server) authorizeUser(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, ok := r.Context().Value(ctxKeyUser).(*model.User)
+		if !ok {
 			s.error(w, r, http.StatusUnauthorized, errNotAuthenticated)
 			return
 		}
@@ -246,30 +268,144 @@ func (s *server) handlePostsCreate() http.HandlerFunc {
 	}
 }
 
-// func (s *server) handleStarGive() http.HandlerFunc {
-// 	type request struct {
-// 		PostID int `json:"post_id"`
-// 	}
+func (s *server) handlePostDelete() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id, err := strconv.Atoi(vars["id"])
+		if err != nil {
+			s.error(w, r, http.StatusUnprocessableEntity, err)
+			return
+		}
 
-// 	return func(w http.ResponseWriter, r *http.Request) {
-// 		req := &request{}
-// 		starer := r.Context().Value(ctxKeyUser).(*model.User)
+		user := r.Context().Value(ctxKeyUser).(*model.User)
 
-// 		if err := json.NewDecoder(r.Body).Decode(req); err != nil {
-// 			s.error(w, r, http.StatusUnprocessableEntity, err)
-// 			return
-// 		}
+		post, err := s.store.Post().Find(id)
+		if err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
+		}
 
-// 		// s := &model.Star{
-// 		// 	Starer: starer,
-// 		// 	Post: &model.Post{
-// 		// 		id
-// 		// 	},
-// 		// }
+		if post.Author.ID != user.ID {
+			s.error(w, r, http.StatusUnauthorized, errNoPermission)
+			return
+		}
+		s.store.Post().Delete(id)
+	}
+}
 
-// 		s.respond(w, r, http.StatusCreated, s)
-// 	}
-// }
+func (s *server) handlePostUpdate() http.HandlerFunc {
+	type request struct {
+		Header   string `json:"header"`
+		TextPost string `json:"text_post"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		req := &request{}
+		vars := mux.Vars(r)
+		id, err := strconv.Atoi(vars["id"])
+		if err != nil {
+			s.error(w, r, http.StatusUnprocessableEntity, err)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+			s.error(w, r, http.StatusBadRequest, err)
+			return
+		}
+		user := r.Context().Value(ctxKeyUser).(*model.User)
+
+		post, err := s.store.Post().Find(id)
+		if err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		if post.Author.ID != user.ID {
+			s.error(w, r, http.StatusUnauthorized, errNoPermission)
+			return
+		}
+		s.store.Post().Update(req.Header, req.TextPost, id)
+	}
+}
+
+func (s *server) handleStarGive() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		postID, err := strconv.Atoi(vars["id"])
+		if err != nil {
+			s.error(w, r, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		starer := r.Context().Value(ctxKeyUser).(*model.User)
+
+		isStarred, err := s.store.Post().IsStarredByUser(starer.ID, postID)
+		if err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		star := &model.Star{
+			Starer: starer,
+			Post: &model.Post{
+				ID: postID,
+			},
+		}
+
+		if isStarred {
+			star.Post.StarsCount, err = s.store.Post().GetStarsCount(postID)
+			s.respond(w, r, http.StatusAccepted, star)
+			return
+		}
+		s.store.Star().Create(star)
+		star.Post.StarsCount, err = s.store.Post().GetStarsCount(postID)
+
+		if err != nil {
+			s.respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		star.Post.IsStarred, err = s.store.Post().IsStarredByUser(starer.ID, postID)
+
+		s.respond(w, r, http.StatusCreated, star)
+	}
+}
+
+func (s *server) handleStarTake() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		postID, err := strconv.Atoi(vars["id"])
+		if err != nil {
+			s.error(w, r, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		starer := r.Context().Value(ctxKeyUser).(*model.User)
+
+		isStarred, err := s.store.Post().IsStarredByUser(starer.ID, postID)
+		if err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		star := &model.Star{
+			Starer: starer,
+			Post: &model.Post{
+				ID: postID,
+			},
+		}
+
+		if !isStarred {
+			s.respond(w, r, http.StatusAccepted, star)
+			return
+		}
+
+		s.store.Star().Delete(starer.ID, postID)
+		star.Post.IsStarred, err = s.store.Post().IsStarredByUser(starer.ID, postID)
+		star.Post.StarsCount, err = s.store.Post().GetStarsCount(postID)
+
+		s.respond(w, r, http.StatusOK, star)
+	}
+}
 
 func (s *server) handlePostsGet() http.HandlerFunc {
 	type response struct {
@@ -280,6 +416,92 @@ func (s *server) handlePostsGet() http.HandlerFunc {
 		if err != nil {
 			s.error(w, r, http.StatusInternalServerError, err)
 			return
+		}
+
+		u, ok := r.Context().Value(ctxKeyUser).(*model.User)
+		if ok {
+			for i := 0; i < len(posts); i++ {
+				posts[i].IsStarred, err = s.store.Post().IsStarredByUser(u.ID, posts[i].ID)
+				if err != nil {
+					s.error(w, r, http.StatusInternalServerError, err)
+					return
+				}
+
+			}
+		}
+
+		resp := &response{
+			Items: posts,
+		}
+
+		s.respond(w, r, http.StatusOK, resp)
+	}
+}
+
+func (s *server) handlePostGet() http.HandlerFunc {
+	type response struct {
+		Item *model.Post `json:"items"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id, err := strconv.Atoi(vars["id"])
+		post, err := s.store.Post().Find(id)
+		if err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		resp := &response{
+			Item: post,
+		}
+
+		s.respond(w, r, http.StatusOK, resp)
+	}
+}
+
+func (s *server) handleGetUserByID() http.HandlerFunc {
+	type response struct {
+		User *model.User `json:"user"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id, err := strconv.Atoi(vars["id"])
+		user, err := s.store.User().FindByID(id)
+		if err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
+		}
+		resp := &response{
+			User: user,
+		}
+
+		s.respond(w, r, http.StatusOK, resp)
+	}
+}
+
+func (s *server) handlePostsGetByUserID() http.HandlerFunc {
+	type response struct {
+		Items []model.Post `json:"items"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id, err := strconv.Atoi(vars["id"])
+		posts, err := s.store.Post().FindByAuthor(id)
+		if err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		u, ok := r.Context().Value(ctxKeyUser).(*model.User)
+		if ok {
+			for i := 0; i < len(posts); i++ {
+				posts[i].IsStarred, err = s.store.Post().IsStarredByUser(u.ID, posts[i].ID)
+				if err != nil {
+					s.error(w, r, http.StatusInternalServerError, err)
+					return
+				}
+
+			}
 		}
 
 		resp := &response{

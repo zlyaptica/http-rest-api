@@ -20,6 +20,16 @@ func (r *StarRepository) Create(s *model.Star) error {
 	).Scan(&s.ID)
 }
 
+// Delete ...
+func (r *StarRepository) Delete(userID int, postID int) error {
+	_, err := r.store.db.Query(
+		"DELETE FROM stars WHERE liker_id = $1 and post_id = $2",
+		userID,
+		postID,
+	)
+	return err
+}
+
 // Find ...
 func (r *PostRepository) FindByPostID(postID int) ([]model.Star, error) {
 	stars := []model.Star{}

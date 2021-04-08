@@ -10,6 +10,7 @@ type Store struct {
 	db             *sqlx.DB
 	userRepository *UserRepository
 	postRepository *PostRepository
+	starRepository *StarRepository
 }
 
 // New ...
@@ -43,4 +44,17 @@ func (s *Store) Post() store.PostRepository {
 	}
 
 	return s.postRepository
+}
+
+// Star ...
+func (s *Store) Star() store.StarRepository {
+	if s.starRepository != nil {
+		return s.starRepository
+	}
+
+	s.starRepository = &StarRepository{
+		store: s,
+	}
+
+	return s.starRepository
 }

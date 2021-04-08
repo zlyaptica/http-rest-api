@@ -3,6 +3,8 @@ package apiserver
 import (
 	"net/http"
 
+	_ "github.com/lib/pq"
+
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
 	"github.com/zlyaptica/http-rest-api/internal/app/store/sqlstore"
